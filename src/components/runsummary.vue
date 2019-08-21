@@ -7,21 +7,33 @@
     >
       <div>{{ fetchRunError }}</div>
     </div>
-    <rundetail :run="run" :ownertype="ownertype" :ownername="ownername" :projectref="projectref"/>
+    <rundetail :run="run" :ownertype="ownertype" :ownername="ownername" :projectref="projectref" />
     <div v-if="run">
       <div v-if="run.phase != 'setuperror'">
-        <div class="m-4 text-xl font-bold">Tasks</div>
+        <div class="flex items-center my-6 justify-between">
+          <span class="ml-4 text-xl font-bold">Tasks</span>
 
-        <ul v-if="run">
-          <li v-for="task in run.sortedTasks" v-bind:key="task.id">
-            <task
-              v-bind:task="task"
-              v-bind:link="runTaskLink(task)"
-              v-bind:waiting-approval="run.tasks_waiting_approval.includes(task.id)"
-              v-bind:parents="parents(task)"
-            />
-          </li>
-        </ul>
+          <div class="flex">
+            <button
+              @click="tasksDisplay = 'graph'"
+              class="relative flex items-center focus:outline-none bg-blue-500 hover:bg-blue-600 text-white font-semibold hover:text-white py-2 px-4 border border-blue-700 rounded rounded-r-none"
+              :class="{ 'bg-blue-600': tasksDisplay=='graph'}"
+              title="Tasks Graph"
+            >
+              <i class="mr-1 mdi mdi-file-tree" />
+            </button>
+            <button
+              @click="tasksDisplay = 'list'"
+              class="relative flex items-center focus:outline-none bg-blue-500 hover:bg-blue-600 text-white font-semibold hover:text-white py-2 px-4 border border-l-0 border-blue-700 rounded rounded-l-none"
+              title="Tasks List"
+              :class="{ 'bg-blue-600': tasksDisplay=='list'}"
+            >
+              <i class="mr-1 mdi mdi-format-list-bulleted-square" />
+            </button>
+          </div>
+        </div>
+        <tasks v-if="tasksDisplay == 'list'" :tasks="tasks" />
+        <tasksgraph v-if="tasksDisplay == 'graph'" :tasks="tasks" />
       </div>
       <div v-else>
         <h2 class="my-4 text-2xl">Setup Errors</h2>
@@ -42,11 +54,12 @@ import { fetchRun } from "@/util/data.js";
 import { userDirectRunTaskLink, projectRunTaskLink } from "@/util/link.js";
 
 import rundetail from "@/components/rundetail.vue";
-import task from "@/components/task.vue";
+import tasks from "@/components/tasks.vue";
+import tasksgraph from "@/components/tasksgraph.vue";
 
 export default {
   name: "runsummary",
-  components: { rundetail, task },
+  components: { rundetail, tasks, tasksgraph },
   props: {
     ownertype: String,
     ownername: String,
@@ -57,7 +70,11 @@ export default {
     return {
       fetchRunError: null,
       run: null,
-      polling: null
+      polling: null,
+
+      tasks: null,
+
+      tasksDisplay: "graph"
     };
   },
   methods: {
@@ -95,28 +112,30 @@ export default {
       this.fetchRunError = null;
       this.run = data;
 
-      // sort tasks by level
-      let tasks = this.run.tasks;
-      let sortedTasks = Object.keys(this.run.tasks)
-        .sort((a, b) =>
-          tasks[a].level > tasks[b].level
-            ? 1
-            : tasks[b].level > tasks[a].level
-            ? -1
-            : 0
-        )
-        .map(k => this.run.tasks[k]);
-      this.run.sortedTasks = sortedTasks;
+      // take a deep copy of run.tasks and make it an array
+      let tasksMap = JSON.parse(JSON.stringify(this.run.tasks));
+      let tasks = Object.keys(tasksMap).map(k => tasksMap[k]);
+
+      // add additional properties to every task
+      for (let task of tasks) {
+        task.link = this.runTaskLink(task);
+        task.parents = this.parents(task);
+        task.waiting_approval = this.run.tasks_waiting_approval.includes(
+          task.id
+        );
+      }
+
+      this.tasks = tasks;
     },
     pollData() {
       this.polling = setInterval(() => {
         this.fetchRun();
-      }, 2000);
+      }, 6000);
     }
   },
   created: function() {
     this.fetchRun();
-    this.pollData();
+    //this.pollData();
   },
   beforeDestroy() {
     clearInterval(this.polling);
